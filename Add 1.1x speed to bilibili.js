@@ -1,180 +1,64 @@
-
 // ==UserScript==
-// @name         b站增加1.1倍速
-// @namespace    https://github.com/Penguin-Killer
-// @version      1.4.0
-// @description  将0.75倍速修改为1.1倍速
-// @author       Penguin-Killer
-// @match        *://*.bilibili.com/video/*
-// @match        *://*.bilibili.com/list/*
-// @icon         https://www.google.com/s2/favicons?sz=64&domain=bilibili.com
+// @name         B站直播自动选择1080P原画清晰度
+// @namespace    http://tampermonkey.net/
+// @version      1.4.1
+// @description  鼠标放在清晰度按钮上后，自动选择B站直播的1080P原画清晰度
+// @author       none
+// @match        *://live.bilibili.com/*
+// @icon         https://www.bilibili.com/favicon.ico
 // @grant        none
+// @run-at       document-idle
 // @license      MIT
-
-// @downloadURL https://update.greasyfork.org/scripts/494155/b%E7%AB%99%E5%A2%9E%E5%8A%A011%E5%80%8D%E9%80%9F.user.js
-// @updateURL https://update.greasyfork.org/scripts/494155/b%E7%AB%99%E5%A2%9E%E5%8A%A011%E5%80%8D%E9%80%9F.meta.js
+// @downloadURL https://update.greasyfork.org/scripts/537861/B%E7%AB%99%E7%9B%B4%E6%92%AD%E8%87%AA%E5%8A%A8%E9%80%89%E6%8B%A91080P%E5%8E%9F%E7%94%BB%E6%B8%85%E6%99%B0%E5%BA%A6.user.js
+// @updateURL https://update.greasyfork.org/scripts/537861/B%E7%AB%99%E7%9B%B4%E6%92%AD%E8%87%AA%E5%8A%A8%E9%80%89%E6%8B%A91080P%E5%8E%9F%E7%94%BB%E6%B8%85%E6%99%B0%E5%BA%A6.meta.js
 // ==/UserScript==
-
-/*
-***********************************************************
-如果不想自动使用1.1倍速，可以将第30行 “element.click();” 注释掉
-***********************************************************
-*/
 (function() {
     'use strict';
 
-    // 配置选项
-    const CONFIG = {
-        targetSelector: '.bpx-player-ctrl-playbackrate-menu-item[data-value="0.75"]',
-        newSpeedText: '1.1x',
-        newSpeedValue: '1.1',
-        checkInterval: 800, // 检测间隔缩短
-        maxAttempts: 30,// 增加尝试次数
-        autoClick: true// 自动点击开关
-    };
+    const MAX_ATTEMPTS = 60;
+    const INTERVAL = 1000;
+    let attempts = 0;
+    let timerId = null; // 保存定时器ID，便于清除
 
-    /**
-     * 检查并修改元素
-     */
-    function checkAndModifyElement() {
-        const element = document.querySelector(CONFIG.targetSelector);
-
-        if (element) {
-            // 保存原始值用于后续恢复
-            if (!element.dataset.originalText) {
-                element.dataset.originalText = element.textContent;
-                element.dataset.originalValue = element.getAttribute('data-value');
-            }
-
-            // 修改元素
-            element.textContent = CONFIG.newSpeedText;
-            element.setAttribute('data-value', CONFIG.newSpeedValue);
-
-            console.log(`✓ ${CONFIG.newSpeedValue}倍速修改成功！`);
-
-            // 如果启用自动点击，则触发点击事件
-            if (CONFIG.autoClick) {
-                element.click();
-                console.log(`✓ 已自动切换到${CONFIG.newSpeedText}`);
-            }
-
-            return true;
+    function selectHighestQuality() {
+        // 修正：严格检查是否超过最大次数
+        if (attempts >= MAX_ATTEMPTS) {
+            console.log('达到最大尝试次数，停止');
+            cleanup();
+            return;
         }
+        attempts++;
+        try {
+            let qualityOption = document.querySelector('.list-it.svelte-1n48lz1');
+            if (!qualityOption) {
+                const options = document.querySelectorAll('[class*="list-it"]');
+                qualityOption = Array.from(options).find(el => el.textContent.includes('1080P'));
+            }
 
-        return false;
-    }
-
-    /**
-     * 延迟执行函数
-     */
-    function delay(ms) {
-        return new Promise(resolve => setTimeout(resolve, ms));
-    }
-
-    /**
-     * 异步检测循环
-     */
-    async function startAsyncChecking() {
-        let attempts = 0;
-
-        while (attempts < CONFIG.maxAttempts) {
-            attempts++;
-
-            if (checkAndModifyElement()) {
-                console.log('✓ 目标元素已成功修改，停止检测');
+            if (qualityOption && qualityOption.textContent.includes('1080P')) {
+                qualityOption.click();
+                console.log('已选择1080P清晰度');
+                cleanup(); // 成功后清理
                 return;
             }
-
-            console.log(`⏳ 第${attempts}次检测未找到元素，等待下一次检查...`);
-            await delay(CONFIG.checkInterval);
+        } catch (e) {
+            console.error('清晰度选择出错:', e);
         }
 
-        console.log(`⚠ 达到最大尝试次数(${CONFIG.maxAttempts})，停止检测`);
+        // 继续尝试
+        timerId = setTimeout(selectHighestQuality, INTERVAL);
     }
 
-    /**
-     * MutationObserver 监听DOM变化
-     */
-    function observeDomChanges() {
-        const observer = new MutationObserver(function(mutations) {
-            mutations.forEach(function(mutation) {
-                // 检查新增的节点
-                mutation.addedNodes.forEach(function(node) {
-                    if (node.nodeType === Node.ELEMENT_NODE) {
-                        // 检查新增节点本身
-                        if (node.matches && node.matches(CONFIG.targetSelector)) {
-                            console.log('🔍 在新增节点中发现目标元素');
-                            checkAndModifyElement();
-                        }
-
-                        // 检查新增节点的子节点
-                        const targetInAddedNode = node.querySelector && node.querySelector(CONFIG.targetSelector);
-                        if (targetInAddedNode) {
-                            console.log('🔍 在新增节点的子节点中发现目标元素');
-                            checkAndModifyElement();
-                        }
-                    }
-                });
-
-                // 如果属性发生变化，也重新检查
-                if (mutation.type === 'attributes') {
-                    checkAndModifyElement();
-                }
-            });
-        });
-
-        observer.observe(document.body, {
-            childList: true,
-            subtree: true,
-            attributes: true,
-            attributeFilter: ['class', 'data-value']
-        });
-
-        return observer;
-    }
-
-    /**
-     * 主启动函数
-     */
-    function initializeScript() {
-        console.log('🚀 B站播放速度优化脚本启动');
-        console.log(`📋 配置: ${CONFIG.newSpeedValue}倍速, 检测间隔${CONFIG.checkInterval}ms, 最大尝试${CONFIG.maxAttempts}次`);
-
-        // 启动异步检测
-        startAsyncChecking();
-
-        // 启动DOM观察器
-        const domObserver = observeDomChanges();
-
-        // 页面可见性改变时重新检测
-        document.addEventListener('visibilitychange', function() {
-            if (!document.hidden) {
-                console.log('🔄 页面重新获得焦点，启动快速检测');
-                // 页面重新可见时立即检测一次
-                setTimeout(checkAndModifyElement, 500);
-            }
-        });
-
-        // 页面完全加载后再检测一次
-        if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', function() {
-                setTimeout(checkAndModifyElement, 1000);
-            });
-        } else {
-            setTimeout(checkAndModifyElement, 1000);
+    function cleanup() {
+        if (timerId) {
+            clearTimeout(timerId);
+            timerId = null;
         }
-
-        // 导出配置以便调试
-        window.BilibiliSpeedConfig = CONFIG;
     }
 
-    // 初始化脚本
-    initializeScript();
+    // 页面卸载时清理
+    window.addEventListener('beforeunload', cleanup);
 
-    // 添加清理函数到全局作用域
-    window.cleanupBilibiliSpeedScript = function() {
-        console.log('🧹 清理B站播放速度脚本');
-        // 这里可以添加清理逻辑
-    };
-
+    // 初始启动
+    timerId = setTimeout(selectHighestQuality, 2000);
 })();
